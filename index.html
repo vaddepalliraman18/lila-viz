@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LILA — Player Journey Visualization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Share+Tech+Mono&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080a0f;
+  --panel: #0c0f18;
+  --panel2: #10131e;
+  --border: #1c2035;
+  --border2: #252a40;
+  --text: #9ba4bc;
+  --text-bright: #ccd0e0;
+  --text-dim: #555e78;
+  --accent: #e8a427;
+  --accent2: #00c9e0;
+  --human: #00c9e0;
+  --bot: #ff6b35;
+  --kill: #ff3344;
+  --death: #6c7592;
+  --loot: #f5c518;
+  --storm: #9b59d6;
+  --extract: #00e676;
+  --font-head: 'Orbitron', monospace;
+  --font-mono: 'Share Tech Mono', monospace;
+  --font-body: 'DM Sans', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font-body); }
+
+/* ─── LAYOUT ─── */
+#app { display: grid; grid-template-rows: 52px 1fr 48px; grid-template-columns: 240px 1fr 210px; height: 100vh; gap: 0; }
+#header { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--border); }
+#sidebar { grid-row: 2; grid-column: 1; background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 14px; }
+#main { grid-row: 2; grid-column: 2; position: relative; overflow: hidden; background: #06080e; }
+#stats { grid-row: 2; grid-column: 3; background: var(--panel); border-left: 1px solid var(--border); padding: 14px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+#timeline { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: var(--panel); border-top: 1px solid var(--border); }
+
+/* ─── HEADER ─── */
+.logo { font-family: var(--font-head); font-size: 18px; font-weight: 900; color: var(--accent); letter-spacing: 3px; }
+.logo span { color: var(--text-dim); font-weight: 400; font-size: 12px; letter-spacing: 2px; margin-left: 8px; }
+.map-tabs { display: flex; gap: 4px; margin-left: auto; }
+.map-tab { font-family: var(--font-head); font-size: 9px; font-weight: 600; letter-spacing: 2px; padding: 5px 14px; border: 1px solid var(--border2); background: transparent; color: var(--text-dim); cursor: pointer; transition: all .2s; }
+.map-tab:hover { border-color: var(--accent); color: var(--accent); }
+.map-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.header-status { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); margin-left: 16px; display: flex; align-items: center; gap: 6px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--extract); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
+
+/* ─── SIDEBAR ─── */
+.s-label { font-family: var(--font-head); font-size: 8px; font-weight: 600; letter-spacing: 2px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 6px; }
+.s-section { border-top: 1px solid var(--border); padding-top: 12px; }
+
+select, .s-select { width: 100%; background: var(--panel2); border: 1px solid var(--border2); color: var(--text-bright); font-family: var(--font-mono); font-size: 11px; padding: 7px 10px; appearance: none; cursor: pointer; }
+select:focus { outline: 1px solid var(--accent); }
+
+.toggle-group { display: flex; flex-direction: column; gap: 6px; }
+.toggle-item { display: flex; align-items: center; justify-content: space-between; padding: 5px 8px; background: var(--panel2); border: 1px solid var(--border); cursor: pointer; transition: all .15s; }
+.toggle-item:hover { border-color: var(--border2); }
+.toggle-item.active { border-color: var(--accent)44; background: var(--accent)0a; }
+.toggle-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.toggle-label { font-family: var(--font-mono); font-size: 11px; color: var(--text); flex: 1; margin-left: 8px; }
+.toggle-count { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); }
+
+.btn { font-family: var(--font-head); font-size: 9px; font-weight: 600; letter-spacing: 2px; padding: 8px 14px; border: 1px solid var(--border2); background: transparent; color: var(--text); cursor: pointer; width: 100%; transition: all .2s; }
+.btn:hover { background: var(--panel2); border-color: var(--accent); color: var(--accent); }
+.btn.active { background: var(--accent)22; border-color: var(--accent); color: var(--accent); }
+.btn-row { display: flex; gap: 6px; }
+.btn-row .btn { flex: 1; padding: 7px 6px; }
+
+/* ─── CANVAS AREA ─── */
+#canvas-wrap { width: 100%; height: 100%; position: relative; display: flex; align-items: center; justify-content: center; }
+#map-canvas { display: block; image-rendering: pixelated; }
+#heat-canvas { position: absolute; pointer-events: none; mix-blend-mode: screen; }
+.corner-label { position: absolute; font-family: var(--font-head); font-size: 9px; letter-spacing: 2px; color: var(--text-dim); }
+.corner-label.tl { top: 12px; left: 12px; }
+.corner-label.tr { top: 12px; right: 12px; text-align: right; }
+.corner-label.bl { bottom: 12px; left: 12px; }
+.corner-label.br { bottom: 12px; right: 12px; text-align: right; }
+#coords { position: absolute; bottom: 8px; right: 8px; font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); background: var(--panel)cc; padding: 3px 7px; }
+#tooltip { position: absolute; background: var(--panel); border: 1px solid var(--border2); padding: 8px 12px; font-family: var(--font-mono); font-size: 11px; color: var(--text-bright); pointer-events: none; display: none; z-index: 10; max-width: 200px; }
+.tooltip-row { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 2px; }
+.tooltip-key { color: var(--text-dim); }
+
+/* ─── STATS PANEL ─── */
+.stat-block { background: var(--panel2); border: 1px solid var(--border); padding: 10px; }
+.stat-title { font-family: var(--font-head); font-size: 7px; letter-spacing: 2px; color: var(--text-dim); margin-bottom: 8px; }
+.stat-big { font-family: var(--font-head); font-size: 22px; font-weight: 700; color: var(--text-bright); }
+.stat-sub { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.zone-bar { margin-bottom: 5px; }
+.zone-bar-label { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: var(--text); margin-bottom: 3px; }
+.zone-bar-track { height: 3px; background: var(--border2); }
+.zone-bar-fill { height: 100%; background: var(--accent); transition: width .5s; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10px; color: var(--text); margin-bottom: 5px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend-line { width: 20px; height: 2px; flex-shrink: 0; }
+
+/* ─── TIMELINE ─── */
+#play-btn { font-family: var(--font-head); font-size: 10px; font-weight: 700; width: 64px; height: 30px; border: 1px solid var(--border2); background: transparent; color: var(--accent); cursor: pointer; letter-spacing: 1px; flex-shrink: 0; transition: all .2s; }
+#play-btn:hover { background: var(--accent)22; border-color: var(--accent); }
+#timeline-track { flex: 1; height: 4px; background: var(--border2); position: relative; cursor: pointer; }
+#timeline-fill { height: 100%; background: var(--accent); width: 0%; transition: width .1s; }
+#timeline-thumb { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); top: -4px; left: 0; transform: translateX(-50%); transition: left .1s; cursor: grab; }
+#time-display { font-family: var(--font-mono); font-size: 11px; color: var(--text); flex-shrink: 0; width: 70px; }
+.speed-btn { font-family: var(--font-mono); font-size: 10px; padding: 4px 8px; border: 1px solid var(--border2); background: transparent; color: var(--text-dim); cursor: pointer; flex-shrink: 0; }
+.speed-btn.active { color: var(--accent); border-color: var(--accent); }
+
+/* ─── SCROLLBAR ─── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--panel); }
+::-webkit-scrollbar-thumb { background: var(--border2); }
+
+/* ─── LOADING ─── */
+#loading { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 999; gap: 16px; }
+#loading.hidden { display: none; }
+.load-title { font-family: var(--font-head); font-size: 28px; font-weight: 900; color: var(--accent); letter-spacing: 6px; }
+.load-bar { width: 300px; height: 2px; background: var(--border2); }
+.load-fill { height: 100%; background: var(--accent); width: 0%; transition: width .3s; }
+.load-text { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); letter-spacing: 2px; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="load-title">LILA</div>
+  <div style="font-family:var(--font-head);font-size:10px;letter-spacing:4px;color:var(--text-dim);margin-top:-8px;">PLAYER JOURNEY VISUALIZATION</div>
+  <div class="load-bar"><div class="load-fill" id="load-fill"></div></div>
+  <div class="load-text" id="load-text">INITIALIZING...</div>
+</div>
+
+<div id="app">
+
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo">LILA <span>// TELEMETRY VIEWER v1.0</span></div>
+    <div class="map-tabs">
+      <button class="map-tab active" data-map="ashveld">ASHVELD</button>
+      <button class="map-tab" data-map="crestfall">CRESTFALL</button>
+      <button class="map-tab" data-map="ironshore">IRONSHORE</button>
+    </div>
+    <div class="header-status"><div class="dot"></div><span id="match-count-hdr">—</span> MATCHES LOADED</div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div>
+      <div class="s-label">Date Filter</div>
+      <select id="date-filter">
+        <option value="all">ALL DATES</option>
+        <option value="2025-01-01">2025-01-01</option>
+        <option value="2025-01-02">2025-01-02</option>
+        <option value="2025-01-03">2025-01-03</option>
+        <option value="2025-01-04">2025-01-04</option>
+        <option value="2025-01-05">2025-01-05</option>
+      </select>
+    </div>
+    <div>
+      <div class="s-label">Match Filter</div>
+      <select id="match-filter"><option value="all">ALL MATCHES</option></select>
+    </div>
+    <div class="s-section">
+      <div class="s-label">Player Type</div>
+      <div class="toggle-group">
+        <div class="toggle-item active" id="tog-human">
+          <div class="toggle-dot" style="background:var(--human)"></div>
+          <div class="toggle-label">HUMAN</div>
+          <div class="toggle-count" id="cnt-human">—</div>
+        </div>
+        <div class="toggle-item active" id="tog-bot">
+          <div class="toggle-dot" style="background:var(--bot)"></div>
+          <div class="toggle-label">BOT</div>
+          <div class="toggle-count" id="cnt-bot">—</div>
+        </div>
+      </div>
+    </div>
+    <div class="s-section">
+      <div class="s-label">Event Types</div>
+      <div class="toggle-group">
+        <div class="toggle-item active" data-event="move"><div class="toggle-dot" style="background:#3a4060"></div><div class="toggle-label">MOVEMENT</div><div class="toggle-count" id="cnt-move">—</div></div>
+        <div class="toggle-item active" data-event="kill"><div class="toggle-dot" style="background:var(--kill)"></div><div class="toggle-label">KILLS</div><div class="toggle-count" id="cnt-kill">—</div></div>
+        <div class="toggle-item active" data-event="death"><div class="toggle-dot" style="background:var(--death)"></div><div class="toggle-label">DEATHS</div><div class="toggle-count" id="cnt-death">—</div></div>
+        <div class="toggle-item active" data-event="loot"><div class="toggle-dot" style="background:var(--loot)"></div><div class="toggle-label">LOOT</div><div class="toggle-count" id="cnt-loot">—</div></div>
+        <div class="toggle-item active" data-event="storm_death"><div class="toggle-dot" style="background:var(--storm)"></div><div class="toggle-label">STORM DEATH</div><div class="toggle-count" id="cnt-storm">—</div></div>
+      </div>
+    </div>
+    <div class="s-section">
+      <div class="s-label">Overlays</div>
+      <div class="toggle-group">
+        <button class="btn" id="btn-heatmap-kill">KILL HEATMAP</button>
+        <button class="btn" id="btn-heatmap-death">DEATH HEATMAP</button>
+        <button class="btn" id="btn-heatmap-traffic">TRAFFIC HEATMAP</button>
+      </div>
+    </div>
+    <div class="s-section">
+      <div class="s-label">Display</div>
+      <div class="btn-row">
+        <button class="btn active" id="btn-paths">PATHS</button>
+        <button class="btn active" id="btn-events">EVENTS</button>
+      </div>
+      <div class="btn-row" style="margin-top:6px;">
+        <button class="btn active" id="btn-zones">ZONES</button>
+        <button class="btn active" id="btn-grid">GRID</button>
+      </div>
+    </div>
+    <div class="s-section" style="margin-top:auto;">
+      <label style="display:block;margin-bottom:6px;">
+        <div class="s-label">Upload Parquet Data</div>
+        <input type="file" id="file-upload" accept=".parquet,.csv,.json" style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);width:100%;">
+      </label>
+      <div style="font-family:var(--font-mono);font-size:9px;color:var(--text-dim);margin-top:4px;">Currently using synthetic demo data</div>
+    </div>
+  </div>
+
+  <!-- MAIN CANVAS -->
+  <div id="main">
+    <div id="canvas-wrap">
+      <canvas id="map-canvas"></canvas>
+      <canvas id="heat-canvas"></canvas>
+      <div class="corner-label tl" id="map-name-label">ASHVELD</div>
+      <div class="corner-label tr" id="match-info-label">—</div>
+      <div class="corner-label bl" id="storm-label"></div>
+      <div id="coords">X: — Y: —</div>
+      <div id="tooltip">
+        <div class="tooltip-row"><span class="tooltip-key">Player:</span><span id="tt-player">—</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Type:</span><span id="tt-type">—</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Event:</span><span id="tt-event">—</span></div>
+        <div class="tooltip-row"><span class="tooltip-key">Time:</span><span id="tt-time">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS PANEL -->
+  <div id="stats">
+    <div class="stat-block">
+      <div class="stat-title">MATCH SUMMARY</div>
+      <div class="stat-big" id="s-players">—</div>
+      <div class="stat-sub">players in view</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-title">KILL / DEATH RATIO</div>
+      <div class="stat-big" id="s-kd">—</div>
+      <div class="stat-sub" id="s-kd-sub">kills / deaths</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-title">STORM DEATHS</div>
+      <div class="stat-big" id="s-storm">—</div>
+      <div class="stat-sub">% of total deaths</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-title">HOT ZONES</div>
+      <div id="zone-bars"></div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-title">LEGEND</div>
+      <div class="legend-item"><div class="legend-line" style="background:var(--human)"></div>Human path</div>
+      <div class="legend-item"><div class="legend-line" style="background:var(--bot)"></div>Bot path</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--kill)"></div>Kill event</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--death)"></div>Death</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--loot)"></div>Loot</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--storm)"></div>Storm death</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-title">AVG SURVIVAL TIME</div>
+      <div class="stat-big" id="s-survival">—</div>
+      <div class="stat-sub">minutes</div>
+    </div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div id="timeline">
+    <button id="play-btn">▶ PLAY</button>
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);flex-shrink:0;">00:00</div>
+    <div id="timeline-track">
+      <div id="timeline-fill"></div>
+      <div id="timeline-thumb"></div>
+    </div>
+    <div id="time-display">00:00</div>
+    <button class="speed-btn active" data-speed="1">1×</button>
+    <button class="speed-btn" data-speed="2">2×</button>
+    <button class="speed-btn" data-speed="4">4×</button>
+    <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);flex-shrink:0;margin-left:8px;" id="phase-label">PHASE —</div>
+  </div>
+
+</div><!-- #app -->
+
+<script>
+// ============================================================
+// CONFIGURATION
+// ============================================================
+const CFG = {
+  WORLD: 8000,
+  DATES: ['2025-01-01','2025-01-02','2025-01-03','2025-01-04','2025-01-05'],
+  MATCHES_PER: 8,
+  MAX_TIME: 1500, // 25 min in seconds
+  SEED: 42
+};
+
+const MAPS_DEF = {
+  ashveld: {
+    name:'ASHVELD', subtitle:'Desert Badlands', accentColor:'#e8804a',
+    bgColor:'#0d0a07',
+    zones:[
+      {name:'Dust Market',  x:1200,y:1500,r:420,w:3.2},
+      {name:'Salt Flats',   x:4000,y:2000,r:580,w:1.8},
+      {name:'Oil Derricks', x:6500,y:1800,r:360,w:2.2},
+      {name:'The Ravine',   x:3500,y:4500,r:500,w:3.0},
+      {name:'Bunker Alpha', x:6200,y:5500,r:410,w:2.1},
+      {name:'Outpost 7',    x:1400,y:6000,r:340,w:1.2},
+      {name:'Crater Lake',  x:4500,y:6600,r:460,w:2.0},
+    ]
+  },
+  crestfall: {
+    name:'CRESTFALL', subtitle:'Mountain Highlands', accentColor:'#5bb8d4',
+    bgColor:'#07090e',
+    zones:[
+      {name:'Summit Base',   x:4000,y:800, r:400,w:3.1},
+      {name:'Cable Station', x:2000,y:2500,r:360,w:2.2},
+      {name:'Frozen Lake',   x:5600,y:2000,r:520,w:2.0},
+      {name:'Research Lab',  x:6600,y:4100,r:410,w:2.8},
+      {name:'Glacier Pass',  x:2800,y:4600,r:450,w:1.9},
+      {name:'Old Mine',      x:1400,y:5600,r:340,w:1.1},
+      {name:'Evac Zone',     x:5000,y:6100,r:420,w:2.3},
+    ]
+  },
+  ironshore: {
+    name:'IRONSHORE', subtitle:'Industrial Docks', accentColor:'#8fd4a4',
+    bgColor:'#060a08',
+    zones:[
+      {name:'Container Yard',x:1000,y:1200,r:500,w:3.0},
+      {name:'Dry Dock',      x:3500,y:1000,r:400,w:2.1},
+      {name:'Refinery',      x:6100,y:1500,r:510,w:2.9},
+      {name:'Harbor Mouth',  x:7100,y:3500,r:360,w:1.8},
+      {name:'Warehouse Row', x:2500,y:4100,r:460,w:2.2},
+      {name:'Power Plant',   x:5100,y:4600,r:420,w:2.4},
+      {name:'Scrap Yard',    x:3000,y:6600,r:360,w:1.3},
+    ]
+  }
+};
+
+// ============================================================
+// SEEDED RANDOM
+// ============================================================
+let _seed = CFG.SEED;
+function rng() {
+  _seed = (_seed * 1664525 + 1013904223) & 0xffffffff;
+  return ((_seed >>> 0) / 0xffffffff);
+}
+function rngRange(a,b) { return a + rng()*(b-a); }
+function rngInt(a,b) { return Math.floor(rngRange(a,b)); }
+function rngChoice(arr) { return arr[rngInt(0,arr.length)]; }
+
+// ============================================================
+// DATA GENERATION
+// ============================================================
+let ALL_EVENTS = [];
+let matchMeta = {};
+
+async function generateData(onProgress) {
+  _seed = CFG.SEED;
+  ALL_EVENTS = [];
+  matchMeta = {};
+  let matchIdx = 0;
+  const maps = Object.keys(MAPS_DEF);
+
+  for (const mapId of maps) {
+    for (const date of CFG.DATES) {
+      for (let m = 0; m < CFG.MATCHES_PER; m++) {
+        const matchId = `M${String(matchIdx++).padStart(4,'0')}`;
+        const playerCount = rngInt(65, 100);
+        const stormCx = rngRange(1500, 6500);
+        const stormCy = rngRange(1500, 6500);
+        matchMeta[matchId] = { mapId, date, playerCount, stormCx, stormCy };
+
+        for (let p = 0; p < playerCount; p++) {
+          const isBot = rng() < 0.28;
+          const playerId = `${isBot?'BOT':'PLR'}_${matchId}_${String(p).padStart(3,'0')}`;
+          generatePlayerEvents(playerId, matchId, mapId, date, isBot, stormCx, stormCy);
+        }
+        if (matchIdx % 10 === 0) {
+          onProgress(matchIdx / (maps.length * CFG.DATES.length * CFG.MATCHES_PER));
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+    }
+  }
+}
+
+function generatePlayerEvents(playerId, matchId, mapId, date, isBot, stormCx, stormCy) {
+  const zones = MAPS_DEF[mapId].zones;
+  const zone = pickWeightedZone(zones);
+  let x = clamp(zone.x + rngRange(-zone.r*.7, zone.r*.7), 100, 7900);
+  let y = clamp(zone.y + rngRange(-zone.r*.7, zone.r*.7), 100, 7900);
+
+  const survivalTime = rng() < 0.6 ? rngRange(120, 900) : rngRange(900, CFG.MAX_TIME);
+  const steps = rngInt(15, 50);
+  const stepTime = survivalTime / steps;
+
+  for (let i = 0; i < steps; i++) {
+    const t = Math.round(i * stepTime);
+    let eventType = 'move';
+
+    const progress = i / steps;
+    // Storm pressure increases mid-late game
+    const stormPull = progress > 0.5 ? (progress - 0.5) * 1.2 : 0;
+    const dx = (stormCx - x) * stormPull * 0.08;
+    const dy = (stormCy - y) * stormPull * 0.08;
+
+    if (i === steps - 1) {
+      const r = rng();
+      if (r < 0.06) eventType = 'storm_death';
+      else eventType = 'death';
+    } else {
+      const r = rng();
+      if (r < 0.04) eventType = 'kill';
+      else if (r < 0.12) eventType = 'loot';
+    }
+
+    ALL_EVENTS.push({ playerId, matchId, mapId, date, x: Math.round(x), y: Math.round(y), t, eventType, isBot });
+
+    // Move
+    const wanderRadius = isBot ? 80 : 200;
+    x = clamp(x + dx + rngRange(-wanderRadius, wanderRadius), 50, 7950);
+    y = clamp(y + dy + rngRange(-wanderRadius, wanderRadius), 50, 7950);
+  }
+}
+
+function pickWeightedZone(zones) {
+  const total = zones.reduce((s, z) => s + z.w, 0);
+  let r = rng() * total;
+  for (const z of zones) { r -= z.w; if (r <= 0) return z; }
+  return zones[zones.length-1];
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+// ============================================================
+// STATE
+// ============================================================
+let state = {
+  map: 'ashveld',
+  date: 'all',
+  match: 'all',
+  showHuman: true,
+  showBot: true,
+  events: { move:true, kill:true, death:true, loot:true, storm_death:true },
+  showPaths: true,
+  showEvents: true,
+  showZones: true,
+  showGrid: true,
+  heatmap: null, // 'kill'|'death'|'traffic'|null
+  currentTime: 0,
+  playing: false,
+  speed: 1,
+  playTimer: null,
+  filteredEvents: [],
+  canvasSize: 0,
+};
+
+// ============================================================
+// CANVAS SETUP
+// ============================================================
+const mapCanvas  = document.getElementById('map-canvas');
+const heatCanvas = document.getElementById('heat-canvas');
+const mCtx = mapCanvas.getContext('2d');
+const hCtx = heatCanvas.getContext('2d');
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  const size = Math.min(wrap.clientWidth - 24, wrap.clientHeight - 24);
+  state.canvasSize = size;
+  mapCanvas.width = mapCanvas.height = size;
+  heatCanvas.width = heatCanvas.height = size;
+  mapCanvas.style.width = mapCanvas.style.height = size + 'px';
+  heatCanvas.style.width = heatCanvas.style.height = size + 'px';
+  heatCanvas.style.top = mapCanvas.offsetTop + 'px';
+  heatCanvas.style.left = mapCanvas.offsetLeft + 'px';
+  render();
+}
+
+// ============================================================
+// COORDINATE MAPPING
+// ============================================================
+function worldToCanvas(wx, wy) {
+  const s = state.canvasSize / CFG.WORLD;
+  return [wx * s, wy * s];
+}
+function canvasToWorld(cx, cy) {
+  const s = CFG.WORLD / state.canvasSize;
+  return [cx * s, cy * s];
+}
+
+// ============================================================
+// FILTER
+// ============================================================
+function getFilteredEvents() {
+  return ALL_EVENTS.filter(e => {
+    if (e.mapId !== state.map) return false;
+    if (state.date !== 'all' && e.date !== state.date) return false;
+    if (state.match !== 'all' && e.matchId !== state.match) return false;
+    if (e.isBot && !state.showBot) return false;
+    if (!e.isBot && !state.showHuman) return false;
+    if (!state.events[e.eventType]) return false;
+    if (state.currentTime < CFG.MAX_TIME && e.t > state.currentTime) return false;
+    return true;
+  });
+}
+
+function getAllForMap() {
+  return ALL_EVENTS.filter(e => {
+    if (e.mapId !== state.map) return false;
+    if (state.date !== 'all' && e.date !== state.date) return false;
+    if (state.match !== 'all' && e.matchId !== state.match) return false;
+    return true;
+  });
+}
+
+// ============================================================
+// MAP BACKGROUND DRAWING
+// ============================================================
+function drawMapBackground() {
+  const sz = state.canvasSize;
+  const mapDef = MAPS_DEF[state.map];
+  mCtx.fillStyle = mapDef.bgColor;
+  mCtx.fillRect(0, 0, sz, sz);
+
+  // Grid
+  if (state.showGrid) {
+    mCtx.strokeStyle = '#ffffff08';
+    mCtx.lineWidth = 0.5;
+    const gridCells = 16;
+    for (let i = 0; i <= gridCells; i++) {
+      const p = (i / gridCells) * sz;
+      mCtx.beginPath(); mCtx.moveTo(p, 0); mCtx.lineTo(p, sz); mCtx.stroke();
+      mCtx.beginPath(); mCtx.moveTo(0, p); mCtx.lineTo(sz, p); mCtx.stroke();
+    }
+  }
+
+  // Terrain features (roads)
+  drawTerrain(sz, mapDef);
+
+  // Zone circles
+  if (state.showZones) {
+    const zones = mapDef.zones;
+    zones.forEach(z => {
+      const [cx, cy] = worldToCanvas(z.x, z.y);
+      const r = z.r * (sz / CFG.WORLD);
+
+      // Zone fill
+      const grad = mCtx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      grad.addColorStop(0, mapDef.accentColor + '1a');
+      grad.addColorStop(1, mapDef.accentColor + '00');
+      mCtx.fillStyle = grad;
+      mCtx.beginPath(); mCtx.arc(cx, cy, r, 0, Math.PI*2); mCtx.fill();
+
+      // Zone border
+      mCtx.strokeStyle = mapDef.accentColor + '30';
+      mCtx.lineWidth = 0.8;
+      mCtx.beginPath(); mCtx.arc(cx, cy, r, 0, Math.PI*2); mCtx.stroke();
+
+      // Zone label
+      mCtx.fillStyle = mapDef.accentColor + '99';
+      mCtx.font = `${Math.max(8, sz*0.013)}px 'Share Tech Mono'`;
+      mCtx.textAlign = 'center';
+      mCtx.fillText(z.name.toUpperCase(), cx, cy + r + 10);
+    });
+  }
+
+  // Storm circle (last phase)
+  if (state.match !== 'all' && matchMeta[state.match]) {
+    const m = matchMeta[state.match];
+    const progress = state.currentTime / CFG.MAX_TIME;
+    const stormR = CFG.WORLD * 0.45 * (1 - progress * 0.9);
+    const [scx, scy] = worldToCanvas(m.stormCx, m.stormCy);
+    const sr = stormR * (sz / CFG.WORLD);
+
+    mCtx.strokeStyle = '#9b59d660';
+    mCtx.lineWidth = 1.5;
+    mCtx.setLineDash([6, 4]);
+    mCtx.beginPath(); mCtx.arc(scx, scy, sr, 0, Math.PI*2); mCtx.stroke();
+    mCtx.setLineDash([]);
+
+    document.getElementById('storm-label').textContent =
+      `STORM R: ${Math.round(stormR)}m`;
+  } else {
+    document.getElementById('storm-label').textContent = '';
+  }
+
+  // Border
+  mCtx.strokeStyle = '#ffffff18';
+  mCtx.lineWidth = 1;
+  mCtx.strokeRect(0.5, 0.5, sz-1, sz-1);
+}
+
+function drawTerrain(sz, mapDef) {
+  // Procedural roads/rivers based on zone connections
+  _seed = Object.keys(MAPS_DEF).indexOf(state.map) * 1000 + 777;
+  const zones = mapDef.zones;
+  mCtx.lineWidth = 1.5;
+  mCtx.strokeStyle = '#ffffff09';
+  mCtx.setLineDash([]);
+
+  for (let i = 0; i < zones.length - 1; i++) {
+    for (let j = i+1; j < zones.length; j++) {
+      if (rng() < 0.5) {
+        const [ax, ay] = worldToCanvas(zones[i].x, zones[i].y);
+        const [bx, by] = worldToCanvas(zones[j].x, zones[j].y);
+        const mx = (ax+bx)/2 + rngRange(-60, 60);
+        const my = (ay+by)/2 + rngRange(-60, 60);
+        mCtx.beginPath();
+        mCtx.moveTo(ax, ay);
+        mCtx.quadraticCurveTo(mx, my, bx, by);
+        mCtx.stroke();
+      }
+    }
+  }
+  _seed = CFG.SEED; // restore
+}
+
+// ============================================================
+// PLAYER PATH + EVENT DRAWING
+// ============================================================
+function drawPlayers(events) {
+  if (!state.showPaths && !state.showEvents) return;
+
+  // Group by player
+  const byPlayer = {};
+  events.forEach(e => {
+    if (!byPlayer[e.playerId]) byPlayer[e.playerId] = [];
+    byPlayer[e.playerId].push(e);
+  });
+
+  Object.values(byPlayer).forEach(path => {
+    if (path.length < 2) return;
+    path.sort((a,b) => a.t - b.t);
+
+    const isBot = path[0].isBot;
+    const pathColor = isBot ? '#ff6b35' : '#00c9e0';
+
+    // Draw path line
+    if (state.showPaths && state.events.move) {
+      mCtx.beginPath();
+      mCtx.strokeStyle = pathColor + '55';
+      mCtx.lineWidth = isBot ? 0.6 : 0.8;
+      mCtx.setLineDash([]);
+      const [sx, sy] = worldToCanvas(path[0].x, path[0].y);
+      mCtx.moveTo(sx, sy);
+      path.forEach(e => {
+        const [px, py] = worldToCanvas(e.x, e.y);
+        mCtx.lineTo(px, py);
+      });
+      mCtx.stroke();
+    }
+
+    // Draw events
+    if (state.showEvents) {
+      path.forEach(e => {
+        if (e.eventType === 'move') return;
+        if (!state.events[e.eventType]) return;
+        const [px, py] = worldToCanvas(e.x, e.y);
+        drawEventMarker(px, py, e.eventType, isBot);
+      });
+    }
+  });
+}
+
+function drawEventMarker(px, py, type, isBot) {
+  mCtx.save();
+  mCtx.translate(px, py);
+  const r = state.canvasSize * 0.006;
+
+  switch(type) {
+    case 'kill':
+      mCtx.strokeStyle = '#ff3344cc';
+      mCtx.lineWidth = 1.2;
+      const kr = r * 0.9;
+      mCtx.beginPath(); mCtx.moveTo(-kr,-kr); mCtx.lineTo(kr,kr); mCtx.stroke();
+      mCtx.beginPath(); mCtx.moveTo(kr,-kr); mCtx.lineTo(-kr,kr); mCtx.stroke();
+      break;
+    case 'death':
+      mCtx.fillStyle = '#6c759299';
+      mCtx.beginPath(); mCtx.arc(0,0,r*.7,0,Math.PI*2); mCtx.fill();
+      mCtx.strokeStyle = '#6c75924d';
+      mCtx.lineWidth = 0.8;
+      mCtx.beginPath(); mCtx.arc(0,0,r*1.2,0,Math.PI*2); mCtx.stroke();
+      break;
+    case 'loot':
+      mCtx.fillStyle = '#f5c518cc';
+      mCtx.beginPath();
+      mCtx.moveTo(0, -r); mCtx.lineTo(r*.7, r*.5); mCtx.lineTo(-r*.7, r*.5);
+      mCtx.closePath(); mCtx.fill();
+      break;
+    case 'storm_death':
+      mCtx.strokeStyle = '#9b59d699';
+      mCtx.lineWidth = 1.2;
+      for (let a = 0; a < 6; a++) {
+        const ang = (a/6)*Math.PI*2;
+        const lr = r * (a%2===0 ? 1.2 : 0.5);
+        if (a===0) mCtx.beginPath(), mCtx.moveTo(Math.cos(ang)*lr, Math.sin(ang)*lr);
+        else mCtx.lineTo(Math.cos(ang)*lr, Math.sin(ang)*lr);
+      }
+      mCtx.closePath(); mCtx.stroke();
+      break;
+  }
+  mCtx.restore();
+}
+
+// ============================================================
+// HEATMAP
+// ============================================================
+function renderHeatmap(type) {
+  hCtx.clearRect(0, 0, heatCanvas.width, heatCanvas.height);
+  if (!type) return;
+
+  const source = getAllForMap().filter(e => {
+    if (type === 'kill') return e.eventType === 'kill';
+    if (type === 'death') return e.eventType === 'death' || e.eventType === 'storm_death';
+    if (type === 'traffic') return true;
+    return false;
+  });
+
+  const colors = {
+    kill: [255, 51, 68],
+    death: [108, 117, 146],
+    traffic: [0, 201, 224]
+  };
+  const [r, g, b] = colors[type];
+  const spread = state.canvasSize * 0.03;
+
+  source.forEach(e => {
+    const [px, py] = worldToCanvas(e.x, e.y);
+    const grad = hCtx.createRadialGradient(px, py, 0, px, py, spread);
+    grad.addColorStop(0, `rgba(${r},${g},${b},0.08)`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    hCtx.fillStyle = grad;
+    hCtx.beginPath();
+    hCtx.arc(px, py, spread, 0, Math.PI*2);
+    hCtx.fill();
+  });
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function render() {
+  if (!state.canvasSize) return;
+  const events = getFilteredEvents();
+  state.filteredEvents = events;
+
+  drawMapBackground();
+  drawPlayers(events);
+  updateStats(events);
+}
+
+// ============================================================
+// STATS
+// ============================================================
+function updateStats(events) {
+  const playerSet = new Set(events.map(e => e.playerId));
+  const kills = events.filter(e => e.eventType==='kill').length;
+  const deaths = events.filter(e => e.eventType==='death').length;
+  const stormD = events.filter(e => e.eventType==='storm_death').length;
+  const totalD = deaths + stormD;
+  const loots = events.filter(e => e.eventType==='loot').length;
+
+  document.getElementById('s-players').textContent = playerSet.size;
+  document.getElementById('s-kd').textContent = totalD ? (kills/totalD).toFixed(2) : '—';
+  document.getElementById('s-kd-sub').textContent = `${kills} kills / ${totalD} deaths`;
+  document.getElementById('s-storm').textContent = totalD ? Math.round(stormD/totalD*100)+'%' : '—';
+
+  // Avg survival
+  const byPlayer = {};
+  events.forEach(e => {
+    if (!byPlayer[e.playerId]) byPlayer[e.playerId] = {max:0};
+    if (e.t > byPlayer[e.playerId].max) byPlayer[e.playerId].max = e.t;
+  });
+  const times = Object.values(byPlayer).map(p => p.max);
+  const avg = times.length ? times.reduce((a,b)=>a+b,0)/times.length : 0;
+  document.getElementById('s-survival').textContent = (avg/60).toFixed(1);
+
+  // Counts
+  document.getElementById('cnt-human').textContent = events.filter(e=>!e.isBot&&e.eventType==='move').length;
+  document.getElementById('cnt-bot').textContent = events.filter(e=>e.isBot&&e.eventType==='move').length;
+  document.getElementById('cnt-move').textContent = events.filter(e=>e.eventType==='move').length;
+  document.getElementById('cnt-kill').textContent = kills;
+  document.getElementById('cnt-death').textContent = deaths;
+  document.getElementById('cnt-loot').textContent = loots;
+  document.getElementById('cnt-storm').textContent = stormD;
+
+  // Zone bars
+  const mapDef = MAPS_DEF[state.map];
+  const zoneCounts = mapDef.zones.map(z => {
+    const count = events.filter(e => {
+      const dx = e.x - z.x, dy = e.y - z.y;
+      return Math.sqrt(dx*dx+dy*dy) < z.r;
+    }).length;
+    return { name: z.name, count };
+  });
+  const maxC = Math.max(...zoneCounts.map(z=>z.count), 1);
+  zoneCounts.sort((a,b) => b.count-a.count);
+  document.getElementById('zone-bars').innerHTML = zoneCounts.slice(0,5).map(z => `
+    <div class="zone-bar">
+      <div class="zone-bar-label"><span>${z.name}</span><span>${z.count}</span></div>
+      <div class="zone-bar-track"><div class="zone-bar-fill" style="width:${(z.count/maxC*100).toFixed(0)}%"></div></div>
+    </div>
+  `).join('');
+
+  // Header stat
+  const allMatches = Object.keys(matchMeta).filter(id => matchMeta[id].mapId === state.map);
+  document.getElementById('match-count-hdr').textContent = allMatches.length;
+  document.getElementById('match-info-label').textContent =
+    state.match !== 'all' ? `MATCH ${state.match}` : `${allMatches.length} MATCHES`;
+}
+
+// ============================================================
+// MATCH FILTER POPULATION
+// ============================================================
+function populateMatchFilter() {
+  const sel = document.getElementById('match-filter');
+  const matches = Object.entries(matchMeta)
+    .filter(([id, m]) => m.mapId === state.map &&
+      (state.date === 'all' || m.date === state.date))
+    .map(([id]) => id)
+    .sort();
+
+  sel.innerHTML = '<option value="all">ALL MATCHES</option>' +
+    matches.map(id => `<option value="${id}">${id} — ${matchMeta[id].date} (${matchMeta[id].playerCount}P)</option>`).join('');
+  sel.value = state.match in matchMeta ? state.match : 'all';
+  state.match = sel.value;
+}
+
+// ============================================================
+// TIMELINE
+// ============================================================
+let animFrame = null;
+let lastFrameTime = null;
+
+function setTime(t) {
+  state.currentTime = clamp(t, 0, CFG.MAX_TIME);
+  const pct = state.currentTime / CFG.MAX_TIME;
+  document.getElementById('timeline-fill').style.width = (pct*100)+'%';
+  document.getElementById('timeline-thumb').style.left = (pct*100)+'%';
+  const mm = Math.floor(state.currentTime/60);
+  const ss = Math.floor(state.currentTime%60);
+  document.getElementById('time-display').textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
+
+  const phase = state.currentTime < 300 ? 1 : state.currentTime < 700 ? 2 : state.currentTime < 1100 ? 3 : 4;
+  document.getElementById('phase-label').textContent = `PHASE ${phase}`;
+  render();
+}
+
+function tickPlayback(ts) {
+  if (!state.playing) return;
+  if (lastFrameTime) {
+    const dt = (ts - lastFrameTime) / 1000;
+    setTime(state.currentTime + dt * state.speed * 30);
+    if (state.currentTime >= CFG.MAX_TIME) {
+      state.playing = false;
+      document.getElementById('play-btn').textContent = '▶ PLAY';
+      return;
+    }
+  }
+  lastFrameTime = ts;
+  animFrame = requestAnimationFrame(tickPlayback);
+}
+
+document.getElementById('play-btn').addEventListener('click', () => {
+  state.playing = !state.playing;
+  document.getElementById('play-btn').textContent = state.playing ? '⏸ PAUSE' : '▶ PLAY';
+  if (state.playing) {
+    if (state.currentTime >= CFG.MAX_TIME) setTime(0);
+    lastFrameTime = null;
+    animFrame = requestAnimationFrame(tickPlayback);
+  } else {
+    cancelAnimationFrame(animFrame);
+  }
+});
+
+// Timeline scrubber
+const track = document.getElementById('timeline-track');
+let dragging = false;
+function scrubToX(clientX) {
+  const rect = track.getBoundingClientRect();
+  const pct = clamp((clientX - rect.left) / rect.width, 0, 1);
+  setTime(pct * CFG.MAX_TIME);
+}
+track.addEventListener('mousedown', e => { dragging = true; scrubToX(e.clientX); });
+document.addEventListener('mousemove', e => { if (dragging) scrubToX(e.clientX); });
+document.addEventListener('mouseup', () => { dragging = false; });
+
+// Speed buttons
+document.querySelectorAll('.speed-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.speed = parseFloat(btn.dataset.speed);
+  });
+});
+
+// ============================================================
+// MAP TABS
+// ============================================================
+document.querySelectorAll('.map-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.map-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    state.map = tab.dataset.map;
+    state.match = 'all';
+    document.getElementById('map-name-label').textContent = MAPS_DEF[state.map].name;
+    populateMatchFilter();
+    renderHeatmap(state.heatmap);
+    render();
+  });
+});
+
+// DATE FILTER
+document.getElementById('date-filter').addEventListener('change', e => {
+  state.date = e.target.value;
+  populateMatchFilter();
+  renderHeatmap(state.heatmap);
+  render();
+});
+
+// MATCH FILTER
+document.getElementById('match-filter').addEventListener('change', e => {
+  state.match = e.target.value;
+  render();
+});
+
+// PLAYER TYPE TOGGLES
+document.getElementById('tog-human').addEventListener('click', function() {
+  state.showHuman = !state.showHuman;
+  this.classList.toggle('active', state.showHuman);
+  render();
+});
+document.getElementById('tog-bot').addEventListener('click', function() {
+  state.showBot = !state.showBot;
+  this.classList.toggle('active', state.showBot);
+  render();
+});
+
+// EVENT TYPE TOGGLES
+document.querySelectorAll('[data-event]').forEach(el => {
+  el.addEventListener('click', function() {
+    const ev = this.dataset.event;
+    state.events[ev] = !state.events[ev];
+    this.classList.toggle('active', state.events[ev]);
+    render();
+  });
+});
+
+// DISPLAY TOGGLES
+['paths','events','zones','grid'].forEach(key => {
+  document.getElementById(`btn-${key}`).addEventListener('click', function() {
+    state[`show${key.charAt(0).toUpperCase()+key.slice(1)}`] = !state[`show${key.charAt(0).toUpperCase()+key.slice(1)}`];
+    this.classList.toggle('active');
+    render();
+  });
+});
+
+// HEATMAP BUTTONS
+['kill','death','traffic'].forEach(type => {
+  document.getElementById(`btn-heatmap-${type}`).addEventListener('click', function() {
+    const isActive = state.heatmap === type;
+    state.heatmap = isActive ? null : type;
+    document.querySelectorAll('[id^="btn-heatmap"]').forEach(b => b.classList.remove('active'));
+    if (!isActive) this.classList.add('active');
+    renderHeatmap(state.heatmap);
+  });
+});
+
+// ============================================================
+// MOUSE HOVER — COORDS + TOOLTIP
+// ============================================================
+mapCanvas.addEventListener('mousemove', (e) => {
+  const rect = mapCanvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  const [wx, wy] = canvasToWorld(cx, cy);
+  document.getElementById('coords').textContent = `X: ${Math.round(wx)}  Y: ${Math.round(wy)}`;
+
+  // Tooltip: find nearest event
+  const tooltip = document.getElementById('tooltip');
+  let nearest = null, nearestD = Infinity;
+  state.filteredEvents.forEach(ev => {
+    const [px, py] = worldToCanvas(ev.x, ev.y);
+    const d = Math.hypot(cx-px, cy-py);
+    if (d < 12 && d < nearestD) { nearest = ev; nearestD = d; }
+  });
+  if (nearest) {
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.offsetX + 14) + 'px';
+    tooltip.style.top = (e.offsetY - 20) + 'px';
+    document.getElementById('tt-player').textContent = nearest.playerId.slice(0, 20);
+    document.getElementById('tt-type').textContent = nearest.isBot ? 'BOT' : 'HUMAN';
+    document.getElementById('tt-event').textContent = nearest.eventType.replace('_',' ').toUpperCase();
+    const mm = Math.floor(nearest.t/60), ss = nearest.t%60;
+    document.getElementById('tt-time').textContent = `${mm}:${String(ss).padStart(2,'0')}`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+});
+mapCanvas.addEventListener('mouseleave', () => {
+  document.getElementById('tooltip').style.display = 'none';
+  document.getElementById('coords').textContent = 'X: — Y: —';
+});
+
+// ============================================================
+// RESIZE
+// ============================================================
+window.addEventListener('resize', resizeCanvas);
+
+// ============================================================
+// INIT
+// ============================================================
+async function init() {
+  const loadFill = document.getElementById('load-fill');
+  const loadText = document.getElementById('load-text');
+
+  const steps = [
+    [0.05, 'LOADING MAP ASSETS...'],
+    [0.15, 'PARSING TELEMETRY SCHEMA...'],
+    [0.25, 'INITIALIZING COORDINATE SYSTEM...'],
+  ];
+  for (const [p, t] of steps) {
+    loadFill.style.width = (p*100)+'%';
+    loadText.textContent = t;
+    await new Promise(r => setTimeout(r, 120));
+  }
+
+  await generateData((p) => {
+    loadFill.style.width = (0.25 + p*0.65)*100 + '%';
+    loadText.textContent = `PROCESSING MATCH DATA... ${Math.round(p*100)}%`;
+  });
+
+  loadFill.style.width = '95%';
+  loadText.textContent = 'BUILDING VISUALIZATION...';
+  await new Promise(r => setTimeout(r, 100));
+
+  setTime(CFG.MAX_TIME); // show full match by default
+
+  populateMatchFilter();
+  resizeCanvas();
+  renderHeatmap(null);
+
+  loadFill.style.width = '100%';
+  await new Promise(r => setTimeout(r, 200));
+  document.getElementById('loading').classList.add('hidden');
+}
+
+init();
+</script>
+</body>
+</html>
